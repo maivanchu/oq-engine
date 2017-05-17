@@ -31,10 +31,10 @@ from openquake.baselib.python3compat import zip
 from openquake.baselib import parallel
 from openquake.hazardlib import nrml
 from openquake.risklib import riskinput
-from openquake.commonlib import readinput, source, calc, config
+from openquake.commonlib import readinput, source, calc, util
 from openquake.calculators import base, event_based
 from openquake.calculators.event_based_risk import (
-    EbriskCalculator, build_el_dtypes, event_based_risk)
+    EbriskCalculator, event_based_risk)
 
 from openquake.hazardlib.geo.surface.multi import MultiSurface
 from openquake.hazardlib.pmf import PMF
@@ -55,6 +55,7 @@ from openquake.hazardlib.sourceconverter import SourceConverter
 
 U16 = numpy.uint16
 U32 = numpy.uint32
+U64 = numpy.uint64
 F32 = numpy.float32
 
 # DEFAULT VALUES FOR UCERF BACKGROUND MODELS
@@ -668,6 +669,7 @@ def build_idx_set(branch_id, start_date):
 # #################################################################### #
 
 
+@util.reader
 def compute_ruptures(sources, src_filter, gsims, param, monitor):
     """
     :param sources: a list with a single UCERF source
@@ -704,8 +706,8 @@ def compute_ruptures(sources, src_filter, gsims, param, monitor):
                         continue
                     indices = r_sites.indices
                     events = []
-                    for occ in range(n_occ):
-                        events.append((0, ses_idx, occ, sample))
+                    for _ in range(n_occ):
+                        events.append((0, ses_idx, sample))
                     if events:
                         evs = numpy.array(events, calc.event_dt)
                         ebruptures.append(
@@ -721,7 +723,6 @@ def compute_ruptures(sources, src_filter, gsims, param, monitor):
         res.events_by_grp = {grp_id: event_based.get_events(res[grp_id])
                              for grp_id in res}
     return res
-compute_ruptures.shared_dir_on = config.SHARED_DIR_ON
 
 
 def get_composite_source_model(oq):
@@ -797,6 +798,7 @@ class List(list):
     """Trivial container returned by compute_losses"""
 
 
+@util.reader
 def compute_losses(ssm, src_filter, param, riskmodel,
                    imts, trunc_level, correl_model, min_iml, monitor):
     """
@@ -834,7 +836,6 @@ def compute_losses(ssm, src_filter, param, riskmodel,
     res.rlz_slice = slice(start, start + num_rlzs)
     res.events_by_grp = ruptures_by_grp.events_by_grp
     return res
-compute_losses.shared_dir_on = config.SHARED_DIR_ON
 
 
 @base.calculators.add('ucerf_hazard')
@@ -858,11 +859,12 @@ class UCERFRiskCalculator(EbriskCalculator):
         source models, the asset collection, the riskmodel and others.
         """
         oq = self.oqparam
+        self.L = len(self.riskmodel.lti)
+        self.I = oq.insured_losses + 1
         correl_model = oq.get_correl_model()
         min_iml = self.get_min_iml(oq)
         imts = list(oq.imtls)
-        ela_dt, elt_dt = build_el_dtypes(
-            self.riskmodel.loss_types, oq.insured_losses)
+        elt_dt = numpy.dtype([('eid', U64), ('loss', (F32, (self.L, self.I)))])
         monitor = self.monitor('compute_losses')
         for sm in self.csm.source_models:
             ssm = self.csm.get_model(sm.ordinal)
@@ -873,7 +875,8 @@ class UCERFRiskCalculator(EbriskCalculator):
                              ses_ratio=oq.ses_ratio,
                              avg_losses=oq.avg_losses,
                              loss_ratios=oq.loss_ratios,
-                             ela_dt=ela_dt, elt_dt=elt_dt,
+                             elt_dt=elt_dt,
+                             asset_loss_table=False,
                              insured_losses=oq.insured_losses)
                 yield (ssm, self.src_filter, param,
                        self.riskmodel, imts, oq.truncation_level,

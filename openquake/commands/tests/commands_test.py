@@ -52,7 +52,7 @@ class Print(object):
     def __init__(self):
         self.lst = []
 
-    def __call__(self, *args):
+    def __call__(self, *args, **kw):
         self.lst.append(b' '.join(encode(str(a)) for a in args))
 
     def __str__(self):
@@ -184,6 +184,7 @@ class RunShowExportTestCase(unittest.TestCase):
         job_ini = os.path.join(os.path.dirname(case_1.__file__), 'job.ini')
         with Print.patch() as cls.p:
             calc = run._run(job_ini, 0, False, 'info', None, '', {})
+            calc.datastore.open()  # if closed
         cls.calc_id = calc.datastore.calc_id
 
     def test_run_calc(self):
@@ -205,12 +206,8 @@ class RunShowExportTestCase(unittest.TestCase):
 
     def test_show_attrs(self):
         with Print.patch() as p:
-            show_attrs('hcurve', self.calc_id)
-        self.assertEqual("'hcurve' is not in <DataStore %d>" %
-                         self.calc_id, str(p))
-        with Print.patch() as p:
-            show_attrs('hcurves', self.calc_id)
-        self.assertEqual("nbytes 24", str(p))
+            show_attrs('poes', self.calc_id)
+        self.assertEqual('nbytes 48', str(p))
 
     def test_export_calc(self):
         tempdir = tempfile.mkdtemp()
@@ -338,4 +335,4 @@ class EngineRunJobTestCase(unittest.TestCase):
             os.path.dirname(case_master.__file__), 'job.ini')
         with Print.patch() as p:
             run_job(job_ini, log_level='error')
-        self.assertIn('Outputs of calculation', str(p))
+        self.assertIn('id | name', str(p))

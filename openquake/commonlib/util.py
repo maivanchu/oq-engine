@@ -17,9 +17,8 @@
 # along with OpenQuake. If not, see <http://www.gnu.org/licenses/>.
 
 from __future__ import division
-import logging
 import numpy
-from openquake.baselib.python3compat import decode
+from openquake.commonlib import config
 
 F32 = numpy.float32
 
@@ -133,37 +132,17 @@ def get_assets(dstore):
     return numpy.array(asset_data, asset_dt)
 
 
-def get_ses_idx(etag):
+def shared_dir_on():
     """
-    >>> get_ses_idx("grp=00~ses=0007~rup=018-01")
-    7
+    :returns: True if a shared_dir has been set in openquake.cfg, else False
     """
-    return int(decode(etag).split('~')[1][4:])
+    return config.SHARED_DIR_ON
 
 
-class Rupture(object):
+def reader(func):
     """
-    Simplified Rupture class with attributes etag, indices, ses_idx,
-    used in export.
-
-    :param grp_id: source group ID
-    :param eid: event ID
-    :param etag: tag associated to the event
-    :param indices: site indices
+    Decorator used to mark functions that require read access to the
+    file system. It simply adds a thunk `shared_dir_on` to the function.
     """
-    def __init__(self, grp_id, eid, etag, indices=None):
-        self.grp_id = grp_id
-        self.eid = eid
-        if isinstance(etag, int):  # scenario
-            self.etag = 'scenario-%010d' % etag
-            self.indices = indices
-            self.ses_idx = 1
-            return
-        # event based
-        if len(etag) > 100:
-            logging.error(
-                'The etag %s is long %d characters, it will be truncated '
-                'to 100 characters in the /etags array', etag, len(etag))
-        self.etag = etag
-        self.indices = indices
-        self.ses_idx = get_ses_idx(etag)
+    func.shared_dir_on = shared_dir_on
+    return func

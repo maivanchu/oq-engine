@@ -20,7 +20,6 @@ import time
 import os.path
 import operator
 import logging
-import functools
 import collections
 
 import numpy
@@ -29,7 +28,8 @@ from openquake.baselib import hdf5
 from openquake.baselib.python3compat import zip
 from openquake.baselib.general import AccumDict, block_splitter, humansize
 from openquake.hazardlib.calc.filters import FarAwayRupture
-from openquake.hazardlib.probability_map import ProbabilityMap, PmapStats
+from openquake.hazardlib.probability_map import ProbabilityMap
+from openquake.hazardlib.stats import compute_pmap_stats
 from openquake.hazardlib.geo.surface import PlanarSurface
 from openquake.risklib.riskinput import (
     GmfGetter, str2rsi, rsi2str, gmf_data_dt)
@@ -179,10 +179,10 @@ def _build_eb_ruptures(
         events = []
         for (sampleid, ses_idx), num_occ in sorted(
                 num_occ_by_rup[rup].items()):
-            for occ_no in range(1, num_occ + 1):
+            for _ in range(num_occ):
                 # NB: the 0 below is a placeholder; the right eid will be
                 # set a bit later, in set_eids
-                events.append((0, ses_idx, occ_no, sampleid))
+                events.append((0, ses_idx, sampleid))
         if events:
             yield calc.EBRupture(
                 rup, r_sites.indices,
@@ -204,7 +204,7 @@ def get_events(ebruptures):
     year = 0  # to be set later
     for ebr in ebruptures:
         for event in ebr.events:
-            rec = (event['eid'], ebr.serial, year, event['ses'], event['occ'],
+            rec = (event['eid'], ebr.serial, year, event['ses'],
                    event['sample'])
             events.append(rec)
     return numpy.array(events, calc.stored_event_dt)
@@ -283,8 +283,7 @@ class EventBasedRuptureCalculator(PSHACalculator):
         """
         Save the SES collection
         """
-        if hasattr(self, 'rupser'):
-            self.rupser.close()
+        self.rupser.close()
         num_events = sum(_count(ruptures) for ruptures in result.values())
         if num_events == 0:
             raise RuntimeError(
@@ -311,12 +310,12 @@ def set_random_years(dstore, events_sm, investigation_time):
     SES ordinal and the investigation time.
     """
     events = dstore[events_sm].value
-    sorted_events = sorted(tuple(event)[1:] for event in events)
+    eids = numpy.sort(events['eid'])
     years = numpy.random.choice(investigation_time, len(events)) + 1
-    year_of = dict(zip(sorted_events, years))
+    year_of = dict(zip(eids, years))
     for event in events:
         idx = event['ses'] - 1  # starts from 0
-        event['year'] = idx * investigation_time + year_of[tuple(event)[1:]]
+        event['year'] = idx * investigation_time + year_of[event['eid']]
     dstore[events_sm] = events
 
 
@@ -437,7 +436,7 @@ class EventBasedCalculator(ClassicalCalculator):
                 for (grp_id, gsim), array in res['gmfcoll'].items():
                     if len(array):
                         key = 'gmf_data/grp-%02d/%s' % (grp_id, gsim)
-                        hdf5.extend3(self.datastore.ext5path, key, array)
+                        hdf5.extend3(self.datastore.hdf5path, key, array)
         slicedic = self.oqparam.imtls.slicedic
         with agg_mon:
             for key, poes in res['hcurves'].items():
@@ -498,20 +497,20 @@ class EventBasedCalculator(ClassicalCalculator):
             self.core_task.__func__, self.gen_args(ruptures_by_grp)
         ).submit_all()
         self.gmdata = {}
-        acc = functools.reduce(self.combine_pmaps_and_save_gmfs, res, {
+        acc = res.reduce(self.combine_pmaps_and_save_gmfs, {
             rlz.ordinal: ProbabilityMap(L, 1) for rlz in rlzs})
         save_gmdata(self, len(rlzs))
         return acc
 
     def save_gmf_bytes(self):
         """Save the attribute nbytes in the gmf_data datasets"""
-        with self.datastore.ext5('r+') as ext5:
-            for sm_id in ext5['gmf_data']:
-                for rlzno in ext5['gmf_data/' + sm_id]:
-                    ext5.set_nbytes('gmf_data/%s/%s' % (sm_id, rlzno))
-            ext5['gmf_data'].attrs['num_sites'] = len(self.sitecol.complete)
-            ext5['gmf_data'].attrs['num_imts'] = len(self.oqparam.imtls)
-            ext5.set_nbytes('gmf_data')
+        ds = self.datastore
+        for sm_id in ds['gmf_data']:
+            for rlzno in ds['gmf_data/' + sm_id]:
+                ds.set_nbytes('gmf_data/%s/%s' % (sm_id, rlzno))
+            ds['gmf_data'].attrs['num_sites'] = len(self.sitecol.complete)
+            ds['gmf_data'].attrs['num_imts'] = len(self.oqparam.imtls)
+            ds.set_nbytes('gmf_data')
 
     def post_execute(self, result):
         """
@@ -525,24 +524,22 @@ class EventBasedCalculator(ClassicalCalculator):
         elif oq.hazard_curves_from_gmfs:
             rlzs = self.rlzs_assoc.realizations
             # save individual curves
-            if self.oqparam.individual_curves:
-                for i in sorted(result):
-                    key = 'hcurves/rlz-%03d' % i
-                    if result[i]:
-                        self.datastore[key] = result[i]
-                    else:
-                        logging.info('Zero curves for %s', key)
+            for i in sorted(result):
+                key = 'hcurves/rlz-%03d' % i
+                if result[i]:
+                    self.datastore[key] = result[i]
+                else:
+                    logging.info('Zero curves for %s', key)
             # compute and save statistics; this is done in process
             # we don't need to parallelize, since event based calculations
             # involves a "small" number of sites (<= 65,536)
             weights = [rlz.weight for rlz in rlzs]
             hstats = self.oqparam.hazard_stats()
             if len(hstats) and len(rlzs) > 1:
-                pstats = PmapStats(hstats, weights)
-                for kind, stat in pstats.compute(
-                        self.sitecol.sids, list(result.values())):
-                    self.datastore['hcurves/' + kind] = stat
-        if os.path.exists(self.datastore.ext5path):
+                for kind, stat in hstats:
+                    pmap = compute_pmap_stats(result.values(), [stat], weights)
+                    self.datastore['hcurves/' + kind] = pmap
+        if 'gmf_data' in self.datastore:
             self.save_gmf_bytes()
         if oq.compare_with_classical:  # compute classical curves
             export_dir = os.path.join(oq.export_dir, 'cl')

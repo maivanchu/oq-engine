@@ -20,7 +20,6 @@ import os
 import sys
 import abc
 import pdb
-import getpass
 import logging
 import operator
 import traceback
@@ -29,12 +28,12 @@ import collections
 import numpy
 
 from openquake.hazardlib import __version__ as hazardlib_version
-from openquake.hazardlib.geo import geodetic
+from openquake.hazardlib import geo
 from openquake.baselib import general, hdf5
 from openquake.baselib.performance import Monitor
 from openquake.hazardlib.calc.filters import SourceFilter
 from openquake.risklib import riskinput, __version__ as engine_version
-from openquake.commonlib import readinput, datastore, source, calc, logs
+from openquake.commonlib import readinput, datastore, source, calc
 from openquake.commonlib.oqvalidation import OqParam
 from openquake.baselib.parallel import Starmap, executor, wakeup_pool
 from openquake.baselib.python3compat import with_metaclass
@@ -76,11 +75,10 @@ PRECALC_MAP = dict(
     classical_risk=['classical'],
     classical_bcr=['classical'],
     classical_damage=['classical'],
-    ebrisk=['event_based', 'event_based_rupture', 'ucerf_rupture',
-            'ebrisk', 'event_based_risk'],
     event_based=['event_based', 'event_based_rupture', 'ebrisk',
                  'event_based_risk', 'ucerf_rupture'],
-    event_based_risk=['ebrisk', 'event_based_risk'],
+    event_based_risk=['event_based', 'event_based_rupture', 'ucerf_rupture',
+                      'event_based_risk'],
     ucerf_classical=['ucerf_psha'],
     ucerf_hazard=['ucerf_rupture'])
 
@@ -256,11 +254,12 @@ class BaseCalculator(with_metaclass(abc.ABCMeta)):
     def export(self, exports=None):
         """
         Export all the outputs in the datastore in the given export formats.
+        Individual outputs are not exported if there are multiple realizations.
 
         :returns: dictionary output_key -> sorted list of exported paths
         """
+        num_rlzs = len(self.datastore['realizations'])
         exported = {}
-        individual_curves = self.oqparam.individual_curves
         if isinstance(exports, tuple):
             fmts = exports
         elif exports:  # is a string
@@ -269,19 +268,15 @@ class BaseCalculator(with_metaclass(abc.ABCMeta)):
             fmts = self.oqparam.exports
         else:  # is a string
             fmts = self.oqparam.exports.split(',')
-        if os.path.exists(self.datastore.ext5path):
-            with self.datastore.ext5() as ext5:
-                keys = set(ext5) | set(self.datastore)
-        else:
-            keys = set(self.datastore)
-        has_hcurves = 'hcurves' in self.datastore
-        # NB: this is False in the classical precalculator
-
+        keys = set(self.datastore)
+        has_hcurves = 'hcurves' in self.datastore or 'poes' in self.datastore
+        if has_hcurves:
+            keys.add('hcurves')
         for fmt in fmts:
             if not fmt:
                 continue
             for key in sorted(keys):  # top level keys
-                if 'rlzs' in key and not individual_curves:
+                if 'rlzs' in key and num_rlzs > 1:
                     continue  # skip individual curves
                 self._export((key, fmt), exported)
             if has_hcurves and self.oqparam.hazard_maps:
@@ -346,7 +341,7 @@ class HazardCalculator(BaseCalculator):
         for some sites.
         """
         maximum_distance = self.oqparam.asset_hazard_distance
-        siteobjects = geodetic.GeographicObjects(
+        siteobjects = geo.utils.GeographicObjects(
             Site(sid, lon, lat) for sid, lon, lat in
             zip(sitecol.sids, sitecol.lons, sitecol.lats))
         assets_by_sid = general.AccumDict()
@@ -372,28 +367,6 @@ class HazardCalculator(BaseCalculator):
         Count how many assets are taken into consideration by the calculator
         """
         return len(self.assetcol)
-
-    def new_calculation(self):
-        """
-        Build a child of the current calculation and change the datastore
-        to the child's one.
-        """
-        oq = self.oqparam
-        parent = self.datastore
-        oq.hazard_calculation_id = parent.calc_id
-        if self.from_engine:  # build a new job_id
-            new_id = logs.dbcmd(
-                'create_job', oq.calculation_mode, oq.description,
-                getpass.getuser(), datastore.DATADIR, oq.hazard_calculation_id)
-        else:
-            new_id = None
-        self.datastore.close()
-        self.__init__(self.oqparam, calc_id=new_id)  # build a new datastore
-        self.datastore.new = True
-        self.datastore.parent = parent
-        self.datastore.open()
-        self.save_params()
-        self.set_log_format()
 
     def compute_previous(self):
         precalc = calculators[self.pre_calculator](
@@ -458,11 +431,11 @@ class HazardCalculator(BaseCalculator):
         If yes, read the inputs by invoking the precalculator or by retrieving
         the previous calculation; if not, read the inputs directly.
         """
+        precalc_id = self.oqparam.hazard_calculation_id
         job_info = {}
         if self.pre_calculator is not None:
             # the parameter hazard_calculation_id is only meaningful if
             # there is a precalculator
-            precalc_id = self.oqparam.hazard_calculation_id
             self.precalc = (self.compute_previous() if precalc_id is None
                             else self.read_previous(precalc_id))
             self.init()
@@ -505,18 +478,16 @@ class HazardCalculator(BaseCalculator):
         logging.info('Reading the exposure')
         with self.monitor('reading exposure', autoflush=True):
             self.exposure = readinput.get_exposure(self.oqparam)
-            arefs = numpy.array(self.exposure.asset_refs)
+            self.sitecol, self.assetcol = (
+                readinput.get_sitecol_assetcol(self.oqparam, self.exposure))
             # NB: using hdf5.vstr would fail for large exposures;
             # the datastore could become corrupt, and also ultra-strange
             # may happen (i.e. having the sitecol saved inside asset_refs!!)
+            arefs = numpy.array(self.exposure.asset_refs)
             self.datastore['asset_refs'] = arefs
             self.datastore.set_attrs('asset_refs', nbytes=arefs.nbytes)
-        logging.info('Building the site collection')
-        with self.monitor('building site collection', autoflush=True):
-            self.sitecol, self.assetcol = (
-                readinput.get_sitecol_assetcol(self.oqparam, self.exposure))
             logging.info('Read %d assets on %d sites',
-                         len(arefs), len(self.sitecol))
+                         len(self.assetcol), len(self.sitecol))
 
     def get_min_iml(self, oq):
         # set the minimum_intensity

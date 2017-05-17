@@ -74,7 +74,6 @@ class OqParam(valid.ParamSet):
     ignore_missing_costs = valid.Param(valid.namelist, [])
     ignore_covs = valid.Param(valid.boolean, False)
     iml_disagg = valid.Param(valid.floatdict, {})  # IMT -> IML
-    individual_curves = valid.Param(valid.boolean, True)
     inputs = valid.Param(dict, {})
     insured_losses = valid.Param(valid.boolean, False)
     intensity_measure_types = valid.Param(valid.intensity_measure_types, None)
@@ -90,7 +89,7 @@ class OqParam(valid.ParamSet):
     maximum_distance = valid.Param(valid.maximum_distance)  # km
     asset_hazard_distance = valid.Param(valid.positivefloat, 5)  # km
     max_hazard_curves = valid.Param(valid.boolean, False)
-    mean_hazard_curves = valid.Param(valid.boolean, False)
+    mean_hazard_curves = valid.Param(valid.boolean, True)
     max_loss_curves = valid.Param(valid.boolean, False)
     mean_loss_curves = valid.Param(valid.boolean, True)
     minimum_intensity = valid.Param(valid.floatdict, {})  # IMT -> minIML
@@ -191,11 +190,7 @@ class OqParam(valid.ParamSet):
 
         # checks for disaggregation
         if self.calculation_mode == 'disaggregation':
-            if not self.individual_curves:
-                raise ValueError(
-                    'For disaggregation the flag `individual_curves` '
-                    'must be true')
-            elif not self.poes_disagg and not self.iml_disagg:
+            if not self.poes_disagg and not self.iml_disagg:
                 raise ValueError('poes_disagg or iml_disagg must be set '
                                  'in the job.ini file')
             elif self.poes_disagg and self.iml_disagg:
@@ -328,14 +323,6 @@ class OqParam(valid.ParamSet):
         Return a composite dtype based on the loss types, including occupants
         """
         return numpy.dtype(self.loss_dt_list(dtype))
-
-    def multiloss_dt(self, dtype=numpy.float32):
-        """
-        Return a composite dtype based on the loss types, including occupants
-        """
-        I = self.insured_losses + 1
-        return numpy.dtype([(str(lt), (dtype, I))
-                            for lt in self.all_cost_types])
 
     def loss_dt_list(self, dtype=numpy.float32):
         """
@@ -535,16 +522,6 @@ class OqParam(valid.ParamSet):
             return False
         else:
             return True
-
-    def is_valid_hazard_curves(self):
-        """
-        You must set `hazard_curves_from_gmfs` if `mean_hazard_curves`
-        or `quantile_hazard_curves` are set.
-        """
-        if self.calculation_mode == 'event_based' and (
-           self.mean_hazard_curves or self.quantile_hazard_curves):
-            return self.hazard_curves_from_gmfs
-        return True
 
     def is_valid_export_dir(self):
         """

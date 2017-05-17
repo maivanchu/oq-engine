@@ -113,25 +113,23 @@ class ClassicalRiskCalculator(base.RiskCalculator):
             self.sitecol, self.assetcol = self.assoc_assets_sites(haz_sitecol)
             self.datastore['csm_info'] = fake = source.CompositionInfo.fake()
             self.rlzs_assoc = fake.get_rlzs_assoc()
-            [rlz] = self.rlzs_assoc.realizations
-            curves_by_rlz = {rlz: haz_curves}
+            rlzs = self.rlzs_assoc.realizations
+            curves = {rlzs[0]: haz_curves}  # there is one realization
         else:  # compute hazard or read it from the datastore
             super(ClassicalRiskCalculator, self).pre_execute()
-            if 'hcurves' not in self.datastore:  # when building short report
+            if 'poes' not in self.datastore:  # when building short report
                 return
             logging.info('Combining the hazard curves')
+            pgetter = calc.PmapGetter(self.datastore)
+            sids = self.sitecol.complete.sids
             with self.monitor(
                     'combining hcurves', measuremem=True, autoflush=True):
-                pmap_by_grp = {grp: self.datastore['poes/' + grp]
-                               for grp in self.datastore['poes']}
-                pmaps = calc.combine_pmaps(self.rlzs_assoc, pmap_by_grp)
-                nsites = len(self.sitecol.complete)
+                pmaps = pgetter.get_pmaps(sids)
                 rlzs = self.rlzs_assoc.realizations
-                curves_by_rlz = {
-                    rlz: pmap.convert(oq.imtls, nsites)
-                    for rlz, pmap in zip(rlzs, pmaps)}
+                curves = {rlz: pmap.convert(oq.imtls, len(sids))
+                          for rlz, pmap in zip(rlzs, pmaps)}
         with self.monitor('build riskinputs', measuremem=True, autoflush=True):
-            self.riskinputs = self.build_riskinputs('poe', curves_by_rlz)
+            self.riskinputs = self.build_riskinputs('poe', curves)
         self.param = dict(insured_losses=oq.insured_losses,
                           stats=oq.risk_stats())
         self.N = len(self.assetcol)
