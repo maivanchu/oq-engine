@@ -22,13 +22,7 @@ jobs:
     - stage: test
       script: nosetests --with-doctest -vsx -a'!slow' openquake/calculators
     - stage: test
-      script: nosetests --with-doctest -vsx -a'!slow' openquake/commonlib
-    - stage: test
-      script: nosetests --with-doctest -vsx -a'!slow' openquake/risklib
-    - stage: test
-      script: nosetests --with-doctest -vsx -a'!slow' openquake/commands
-    - stage: test
-      script: nosetests --with-doctest -vsx -a'!slow' openquake/engine
+      script: nosetests --with-doctest -vsx -a'!slow' openquake/commonlib openquake/risklib openquake/commands openquake/engine
 
 script:
   - python -c'import platform; print(platform.platform())'
