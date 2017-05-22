@@ -19,8 +19,6 @@ install:
 
 jobs:
   include:
-    - stage: demos
-      script: bin/run-demos.sh
     - stage: test
       script: nosetests --with-doctest -vsx -a'!slow' openquake/server
     - stage: test
@@ -33,8 +31,12 @@ jobs:
       script: nosetests --with-doctest -vsx -a'!slow' openquake/commands
     - stage: test
       script: nosetests --with-doctest -vsx -a'!slow' openquake/engine
-    - stage: final
-      script: cat /tmp/webui*;  bin/oq reset --yes
+
+script:
+  - python -c'import platform; print(platform.platform())'
+  - bin/run-demos.sh
+  - cat /tmp/webui*
+  - bin/oq reset --yes
 
 after_success:
   - pip install sphinx==1.3.6
