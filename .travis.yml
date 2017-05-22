@@ -20,8 +20,6 @@ install:
 jobs:
   include:
     - stage: test
-      script: nosetests --with-doctest -vsx -a'!slow' openquake/server
-    - stage: test
       script: nosetests --with-doctest -vsx -a'!slow' openquake/calculators
     - stage: test
       script: nosetests --with-doctest -vsx -a'!slow' openquake/commonlib
@@ -35,6 +33,7 @@ jobs:
 script:
   - python -c'import platform; print(platform.platform())'
   - bin/run-demos.sh
+  - nosetests --with-doctest -vsx -a'!slow' openquake/server
   - cat /tmp/webui*
   - bin/oq reset --yes
 
