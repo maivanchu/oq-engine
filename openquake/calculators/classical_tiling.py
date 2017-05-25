@@ -25,7 +25,7 @@ import numpy
 from openquake.baselib import parallel
 from openquake.baselib.general import AccumDict
 from openquake.hazardlib.calc.hazard_curve import (
-    pmap_from_grp, ProbabilityMap)
+    calc_pmap, ProbabilityMap, SourceFilter)
 from openquake.commonlib import datastore, source
 from openquake.calculators import base
 
@@ -34,13 +34,13 @@ F32 = numpy.float32
 F64 = numpy.float64
 
 
-def classical_tiling(sources, src_filter, gsims, param, monitor):
+def classical_tiling(csm, tile, gsim_by_trt, param, monitor):
     """
-    :param sources:
-        a non-empty sequence of sources of homogeneous tectonic region type
-    :param src_filter:
-        source filter
-    :param gsims:
+    :param csm:
+        a CompositeSourceModel instance
+    :param tile:
+        a FilteredSiteCollection instance
+    :param gsim_by_trt:
         a list of GSIMs for the current tectonic region type
     :param param:
         a dictionary of parameters
@@ -49,16 +49,11 @@ def classical_tiling(sources, src_filter, gsims, param, monitor):
     :returns:
         an AccumDict rlz -> curves
     """
-    truncation_level = monitor.truncation_level
-    imtls = monitor.imtls
-    src_group_id = sources[0].src_group_id
-    # sanity check: the src_group must be the same for all sources
-    for src in sources[1:]:
-        assert src.src_group_id == src_group_id
-    pmap = pmap_from_grp(
-        sources, src_filter, imtls, gsims, truncation_level,
-        bbs=[], monitor=monitor)
-    pmap.grp_id = src_group_id
+    imtls = param['imtls']
+    truncation_level = param['truncation_level']
+    ssfilter = SourceFilter(tile, param['maximum_distance'], use_rtree=False)
+    pmap = calc_pmap(
+        csm.src_groups, ssfilter, imtls, gsim_by_trt, truncation_level)
     return pmap
 
 
@@ -137,11 +132,15 @@ class ClassicalTilingCalculator(base.HazardCalculator):
                 logging.info('Sending source group #%d of %d (%s, %d sources)',
                              sg.id + 1, ngroups, sg.trt, len(sg.sources))
                 gsims = self.rlzs_assoc.gsims_by_grp_id[sg.id]
-                if oq.poes_disagg or oq.iml_disagg:  # only for disaggregation
-                    monitor.sm_id = self.rlzs_assoc.sm_ids[sg.id]
                 param = dict(
+                    truncation_level=oq.truncation_level,
+                    imtls=oq.imtls,
+                    maximum_distance=oq.maximum_distance,
+                    disagg=oq.poes_disagg or oq.iml_disagg,
                     samples=sm.samples, seed=oq.ses_seed,
                     ses_per_logic_tree_path=oq.ses_per_logic_tree_path)
+                if oq.poes_disagg or oq.iml_disagg:  # only for disaggregation
+                    param['sm_id'] = self.rlzs_assoc.sm_ids[sg.id]
                 if sg.src_interdep == 'mutex':  # do not split the group
                     self.csm.add_infos(sg.sources)
                     yield sg, self.src_filter, gsims, param, monitor
