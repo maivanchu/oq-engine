@@ -214,7 +214,7 @@ class PSHACalculator(base.HazardCalculator):
         Aggregate dictionaries of hazard curves by updating the accumulator.
 
         :param acc: accumulator dictionary
-        :param pmap: a ProbabilityMap
+        :param pmap_by_grp: a dictionary src_group_id -> ProbabilityMap
         """
         with self.monitor('aggregate pmaps', autoflush=True):
             for grp_id, pmap in sorted(pmap_by_grp.items()):

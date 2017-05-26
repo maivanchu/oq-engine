@@ -51,7 +51,7 @@ def classical_tiling(csm, tile, gsims_by_grp, param, monitor):
         if len(group):
             pmap_by_grp[group.id] = pmap_from_grp(
                 group, src_filter, imtls, gsims_by_grp[group.id],
-                truncation_level)
+                truncation_level, monitor=monitor)
     return pmap_by_grp
 
 
