@@ -198,19 +198,7 @@ def classical(sources, src_filter, gsims, param, monitor):
         sources, src_filter, imtls, gsims, truncation_level,
         bbs=bbs, monitor=monitor)
     pmap.bbs = bbs
-    pmap.grp_id = src_group_id
-    return pmap
-
-
-def saving_sources_by_task(iterargs, dstore):
-    """
-    Yield the iterargs again by populating 'task_info/source_ids'
-    """
-    source_ids = []
-    for args in iterargs:
-        source_ids.append(' ' .join(src.source_id for src in args[0]))
-        yield args
-    dstore['task_sources'] = numpy.array([encode(s) for s in source_ids])
+    return {src_group_id: pmap}
 
 
 @base.calculators.add('psha')
@@ -221,24 +209,25 @@ class PSHACalculator(base.HazardCalculator):
     core_task = classical
     source_info = datastore.persistent_attribute('source_info')
 
-    def agg_dicts(self, acc, pmap):
+    def agg_dicts(self, acc, pmap_by_grp):
         """
         Aggregate dictionaries of hazard curves by updating the accumulator.
 
         :param acc: accumulator dictionary
         :param pmap: a ProbabilityMap
         """
-        with self.monitor('aggregate curves', autoflush=True):
-            for src_id, nsites, calc_time in pmap.calc_times:
-                src_id = src_id.split(':', 1)[0]
-                info = self.csm.infos[pmap.grp_id, src_id]
-                info.calc_time += calc_time
-                info.num_sites = max(info.num_sites, nsites)
-                info.num_split += 1
-            acc.eff_ruptures += pmap.eff_ruptures
-            for bb in getattr(pmap, 'bbs', []):  # for disaggregation
-                acc.bb_dict[bb.lt_model_id, bb.site_id].update_bb(bb)
-            acc[pmap.grp_id] |= pmap
+        with self.monitor('aggregate pmaps', autoflush=True):
+            for grp_id, pmap in sorted(pmap_by_grp.items()):
+                for src_id, nsites, calc_time in pmap.calc_times:
+                    src_id = src_id.split(':', 1)[0]
+                    info = self.csm.infos[pmap.grp_id, src_id]
+                    info.calc_time += calc_time
+                    info.num_sites = max(info.num_sites, nsites)
+                    info.num_split += 1
+                acc.eff_ruptures += pmap.eff_ruptures
+                for bb in getattr(pmap, 'bbs', []):  # for disaggregation
+                    acc.bb_dict[bb.lt_model_id, bb.site_id].update_bb(bb)
+                acc[grp_id] |= pmap
         self.datastore.flush()
         return acc
 
@@ -271,18 +260,27 @@ class PSHACalculator(base.HazardCalculator):
                         smodel.ordinal, sid)
         return zd
 
+    def saving_sources_by_task(self, iterargs):
+        """
+        Yield the iterargs again by populating 'task_info/source_ids'
+        """
+        source_ids = []
+        for args in iterargs:
+            source_ids.append(' ' .join(src.source_id for src in args[0]))
+            yield args
+        self.datastore['task_sources'] = numpy.array(
+            [encode(s) for s in source_ids])
+
     def execute(self):
         """
         Run in parallel `core_task(sources, sitecol, monitor)`, by
         parallelizing on the sources according to their weight and
         tectonic region type.
         """
-        oq = self.oqparam
         monitor = self.monitor(self.core_task.__name__)
-
         with self.monitor('managing sources', autoflush=True):
             allargs = self.gen_args(self.csm, monitor)
-            iterargs = saving_sources_by_task(allargs, self.datastore)
+            iterargs = self.saving_sources_by_task(allargs)
             if isinstance(allargs, list):
                 # there is a trick here: if the arguments are known
                 # (a list, not an iterator), keep them as a list

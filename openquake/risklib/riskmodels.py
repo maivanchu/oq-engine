@@ -284,7 +284,8 @@ def rescale(curves, values):
     return numpy.array([[losses[i], poes[i]] for i in range(n)])
 
 
-@registry.add('classical_risk', 'classical', 'disaggregation')
+@registry.add('classical_risk', 'classical', 'classical_tiling',
+              'disaggregation')
 class Classical(RiskModel):
     """
     Classical PSHA-Based RiskModel. Computes loss curves and insured curves.
