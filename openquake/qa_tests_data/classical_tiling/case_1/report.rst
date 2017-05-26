@@ -2,9 +2,9 @@ Classical PSHA using Area Source
 ================================
 
 ================================================ ========================
-tstation.gem.lan:/mnt/ssd/oqdata/calc_21373.hdf5 Fri May 12 10:46:45 2017
-engine_version                                   2.4.0-git59713b5        
-hazardlib_version                                0.24.0-git0596dd3       
+tstation.gem.lan:/mnt/ssd/oqdata/calc_22444.hdf5 Fri May 26 05:37:26 2017
+engine_version                                   2.5.0-git4bd15be        
+hazardlib_version                                0.25.0-git9fb9c52       
 ================================================ ========================
 
 num_sites = 6, sitecol = 1.05 KB
@@ -12,7 +12,7 @@ num_sites = 6, sitecol = 1.05 KB
 Parameters
 ----------
 =============================== ==================
-calculation_mode                'classical'       
+calculation_mode                'classical_tiling'
 number_of_logic_tree_samples    0                 
 maximum_distance                {'default': 200.0}
 investigation_time              50.0              
@@ -68,31 +68,31 @@ Number of ruptures per tectonic region type
 ================ ====== ==================== =========== ============ ============
 source_model     grp_id trt                  num_sources eff_ruptures tot_ruptures
 ================ ====== ==================== =========== ============ ============
-source_model.xml 0      Active Shallow Crust 1           1640         1,640       
+source_model.xml 0      Active Shallow Crust 1           4920         1,640       
 ================ ====== ==================== =========== ============ ============
 
 Informational data
 ------------------
-============================== =========================================================================
-count_eff_ruptures.received    tot 1.64 KB, max_per_task 1.64 KB                                        
-count_eff_ruptures.sent        sources 1.86 KB, monitor 1.4 KB, srcfilter 824 B, gsims 179 B, param 65 B
-hazard.input_weight            164                                                                      
-hazard.n_imts                  3 B                                                                      
-hazard.n_levels                57 B                                                                     
-hazard.n_realizations          2 B                                                                      
-hazard.n_sites                 6 B                                                                      
-hazard.n_sources               1 B                                                                      
-hazard.output_weight           684                                                                      
-hostname                       tstation.gem.lan                                                         
-require_epsilons               0 B                                                                      
-============================== =========================================================================
+============================ ============================================================================
+classical_tiling.received    tot 8.05 KB, max_per_task 2.68 KB                                           
+classical_tiling.sent        csm 13.53 KB, param 3.31 KB, tile 1.56 KB, gsims_by_grp 945 B, monitor 933 B
+hazard.input_weight          164                                                                         
+hazard.n_imts                3 B                                                                         
+hazard.n_levels              57 B                                                                        
+hazard.n_realizations        2 B                                                                         
+hazard.n_sites               6 B                                                                         
+hazard.n_sources             1 B                                                                         
+hazard.output_weight         684                                                                         
+hostname                     tstation.gem.lan                                                            
+require_epsilons             0 B                                                                         
+============================ ============================================================================
 
 Slowest sources
 ---------------
 ====== ========= ============ ============ ========= ========= =========
 grp_id source_id source_class num_ruptures calc_time num_sites num_split
 ====== ========= ============ ============ ========= ========= =========
-0      1         AreaSource   1,640        0.002     6         1        
+0      1         AreaSource   1,640        8.747     2         3        
 ====== ========= ============ ============ ========= ========= =========
 
 Computation times by source typology
@@ -100,27 +100,26 @@ Computation times by source typology
 ============ ========= ======
 source_class calc_time counts
 ============ ========= ======
-AreaSource   0.002     1     
+AreaSource   8.747     1     
 ============ ========= ======
 
 Information about the tasks
 ---------------------------
 ================== ===== ====== ===== ===== =========
 operation-duration mean  stddev min   max   num_tasks
-count_eff_ruptures 0.003 NaN    0.003 0.003 1        
+classical_tiling   2.922 0.007  2.917 2.930 3        
 ================== ===== ====== ===== ===== =========
 
 Slowest operations
 ------------------
-================================ ========= ========= ======
-operation                        time_sec  memory_mb counts
-================================ ========= ========= ======
-reading composite source model   0.037     0.0       1     
-total count_eff_ruptures         0.003     0.0       1     
-reading site collection          0.002     0.0       1     
-managing sources                 8.843E-04 0.0       1     
-store source_info                4.818E-04 0.0       1     
-filtering composite source model 3.743E-05 0.0       1     
-saving probability maps          2.384E-05 0.0       1     
-aggregate curves                 1.931E-05 0.0       1     
-================================ ========= ========= ======
+============================== ========= ========= ======
+operation                      time_sec  memory_mb counts
+============================== ========= ========= ======
+total classical_tiling         8.766     4.898     3     
+reading composite source model 0.048     0.0       1     
+store source_info              0.008     0.0       1     
+managing sources               0.003     0.0       1     
+saving probability maps        0.003     0.0       1     
+reading site collection        0.003     0.0       1     
+aggregate pmaps                1.471E-04 0.0       3     
+============================== ========= ========= ======
