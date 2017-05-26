@@ -17,6 +17,7 @@
 # along with OpenQuake. If not, see <http://www.gnu.org/licenses/>.
 
 from __future__ import division
+import logging
 import numpy
 
 from openquake.hazardlib.calc.hazard_curve import pmap_from_grp, SourceFilter
@@ -73,6 +74,7 @@ class PSHATilingCalculator(classical.PSHACalculator):
             imtls=oq.imtls,
             truncation_level=oq.truncation_level,
             maximum_distance=oq.maximum_distance)
+        logging.info('Populating source_info and splitting in tiles')
         csm.add_infos(csm.get_sources())
         for tile in self.sitecol.split_in_tiles(oq.concurrent_tasks):
             yield csm, tile, gsims_by_grp, param, monitor
