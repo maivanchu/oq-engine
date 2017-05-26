@@ -220,7 +220,7 @@ class PSHACalculator(base.HazardCalculator):
             for grp_id, pmap in sorted(pmap_by_grp.items()):
                 for src_id, nsites, calc_time in pmap.calc_times:
                     src_id = src_id.split(':', 1)[0]
-                    info = self.csm.infos[pmap.grp_id, src_id]
+                    info = self.csm.infos[grp_id, src_id]
                     info.calc_time += calc_time
                     info.num_sites = max(info.num_sites, nsites)
                     info.num_split += 1
